@@ -4,6 +4,14 @@ module global_variables
   complex(8),parameter :: zI =(0d0, 1d0)
   real(8),parameter :: pi = 4d0*atan(1d0)
 
+! finite difference coefficients
+  real(8),parameter :: clap0 = -5d0/2d0
+  real(8),parameter :: clap1 =  4d0/3d0
+  real(8),parameter :: clap2 = -1d0/12d0
+  real(8),parameter :: cgra0 =  0d0
+  real(8),parameter :: cgra1 =  2d0/3d0
+  real(8),parameter :: cgra2 = -1d0/12d0
+
 
 ! simulation box
   integer :: nx           ! number of grid points
@@ -145,7 +153,7 @@ subroutine update_hamiltonian(gs_rt)
         end do
       end do
     end do
-    v_F = rho_dm*v_int
+    v_F = -rho_dm*v_int
 
   case('rt','RT')
 
@@ -165,7 +173,7 @@ subroutine update_hamiltonian(gs_rt)
         end do
       end do
     end do
-    zv_F = zrho_dm*v_int
+    zv_F = -zrho_dm*v_int
   case default
     stop 'Error update_hamiltonian'
   end select
@@ -176,6 +184,46 @@ subroutine update_hamiltonian(gs_rt)
 
 end subroutine update_hamiltonian
 !----------------------------------------------------------------------------------------!
+subroutine hpsi(psi_in, hpsi_out)
+  use global_variables
+  implicit none
+  real(8),intent(in) :: psi_in(0:nx-1)
+  real(8),intent(out) :: hpsi_out(0:nx-1)
+  integer :: ix
+
+
+! kinetic energy
+  ix = 0
+  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+    +clap1*(psi_in(ix+1)) &
+    +clap2*(psi_in(ix+2)))
+  ix = 1
+  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+    +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
+    +clap2*(psi_in(ix+2)))
+  do ix = 0+2, nx-1-2
+    hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+      +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
+      +clap2*(psi_in(ix+2)+psi_in(ix-2)))
+  end do
+  ix = nx -1 -1
+  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+    +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
+    +clap2*(psi_in(ix-2)))
+  ix = nx -1
+  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+    +clap1*(psi_in(ix-1)) &
+    +clap2*(psi_in(ix-2)))
+
+! local potential
+  hpsi_out = hpsi_out + (v_ext + v_H)*psi_in
+
+! nonlocal potential
+! this part has to be optimized by BLAS routine
+  hpsi_out = hpsi_out + matmul(v_F,psi_in)
+
+
+end subroutine hpsi
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
