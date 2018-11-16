@@ -20,10 +20,10 @@ module global_variables
   real(8),allocatable :: rho(:), v_H(:)
 
 ! GS quantities
-  real(8),allocatable :: psi(:,:), rho_dm(:,:)
+  real(8),allocatable :: psi(:,:), rho_dm(:,:), v_F(:,:)
 
 ! RT quantities
-  complex(8),allocatable :: zpsi(:,:), zrho_dm(:,:)
+  complex(8),allocatable :: zpsi(:,:), zrho_dm(:,:), zv_F(:,:)
 
 
 end module global_variables
@@ -69,8 +69,10 @@ subroutine initialize
   allocate(v_ext(0:nx-1), v_int(0:nx-1,0:nx-1))
   allocate(rho(0:nx-1), v_H(0:nx-1))
   allocate(psi(0:nx-1,nstate), rho_dm(0:nx-1,0:nx-1))
+  allocate(v_F(0:nx-1, 0:nx-1))
 
   allocate(zpsi(0:nx-1,nstate), zrho_dm(0:nx-1,0:nx-1))
+  allocate(zv_F(0:nx-1, 0:nx-1))
 
 
 ! set potentials
@@ -88,14 +90,91 @@ subroutine initialize
   end do
 
 
-
 end subroutine initialize
 !----------------------------------------------------------------------------------------!
 subroutine calc_ground_state
   use global_variables
   implicit none
+  integer :: istate, jstate
+  real(8) :: ss
+
+! initialize wavefunction
+  do istate = 1, nstate
+    call random_number(psi(:,istate))
+  end do
+
+! Gram-Schmidt
+  do istate = 1, nstate
+    do jstate = 1, istate-1
+      ss = sum(psi(:,istate)*psi(:,jstate))*dx
+      psi(:,istate) = psi(:istate) - ss * psi(:,jstate)
+    end do
+    ss = sum(psi(:,istate)**2)*dx
+    psi(:,istate) = psi(:,istate)/sqrt(ss)
+  end do
+
+
+  call update_hamiltonian('gs')
+
+
 end subroutine calc_ground_state
 !----------------------------------------------------------------------------------------!
+subroutine update_hamiltonian(gs_rt)
+  use global_variables
+  implicit none
+  character(2),intent(in) :: gs_rt
+  integer :: istate
+  integer :: ix, jx
+
+  select case(gs_rt)
+  case('gs','GS')
+
+! one-body density
+    rho = psi(:,1)**2
+    do istate = 2, nstate
+      rho = rho + psi(:,istate)**2
+    end do
+    rho = 2d0*rho
+    
+! one-body reduced density matrix
+    rho_dm = 0d0
+    do istate = 1, nstate
+      do jx = 0, nx -1
+        do ix = 0, nx -1
+          rho_dm(ix,jx) = rho_dm(ix,jx) + psi(ix,istate)*psi(jx,istate)
+        end do
+      end do
+    end do
+    v_F = rho_dm*v_int
+
+  case('rt','RT')
+
+! one-body density
+    rho = abs(zpsi(:,1))**2
+    do istate = 2, nstate
+      rho = rho + abs(zpsi(:,istate))**2
+    end do
+    rho = 2d0*rho
+    
+! one-body reduced density matrix
+    zrho_dm = 0d0
+    do istate = 1, nstate
+      do jx = 0, nx -1
+        do ix = 0, nx -1
+          zrho_dm(ix,jx) = zrho_dm(ix,jx) + psi(ix,istate)*conjg(psi(jx,istate))
+        end do
+      end do
+    end do
+    zv_F = zrho_dm*v_int
+  case default
+    stop 'Error update_hamiltonian'
+  end select
+
+  do ix = 0, nx
+    v_H(ix) = sum(v_int(:,ix)*rho(:))*dx
+  end do
+
+end subroutine update_hamiltonian
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
