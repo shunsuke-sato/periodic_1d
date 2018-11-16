@@ -103,6 +103,7 @@ end subroutine initialize
 subroutine calc_ground_state
   use global_variables
   implicit none
+  integer :: iscf
   integer :: istate, jstate
   real(8) :: ss
 
@@ -124,8 +125,76 @@ subroutine calc_ground_state
 
   call update_hamiltonian('gs')
 
+  do iscf = 1, 300
+    call cg_eigen(5)
+  end do
+
 
 end subroutine calc_ground_state
+!----------------------------------------------------------------------------------------!
+! CG eigen solver, PRB 68, 165337 (2003)
+subroutine cg_eigen(ncg_in)
+  use global_variables
+  implicit none
+  integer,intent(in) :: ncg_in
+  real(8) :: psi_t(0:nx-1)
+  real(8) :: hpsi_t(0:nx-1)
+  real(8) :: xi(0:nx-1)
+  real(8) :: phi_t(0:nx-1),phi_old(0:nx-1)
+  real(8) :: lambda, xixi, xixi_old
+  integer :: istate
+  real(8) :: ss
+
+  do istate = 1 ,nstate
+
+    psi_t(:) = psi(:,istate)
+    do jstate = 1, istate-1
+      ss = sum(psi_t(:)*psi(:,jstate))*dx
+      psi_t(:) = psi_t(: - ss * psi(:,jstate)
+    end do
+    ss = sum(psi_t(:)**2)*dx
+    psi_t(:) = psi_t(:)/sqrt(ss)
+
+! calc xi
+    call hpsi(psi_t, hpsi_t)
+    lambda = sum(psi_t*hpsi_t)*dx
+    xi = lambda*psi_t - hpsi_t
+    do jstate = 1, istate-1
+      ss = sum(xi(:)*psi(:,jstate))*dx
+      xi(:) = xi(:) - ss * psi(:,jstate)
+    end do
+
+    xixi = sum(xi**2)*dx
+    xixi_old = xixi
+
+    do icg = 0, ncg
+
+      if(icg == 0)then
+        gamma = 0d0
+        phi_old = 0d0
+      else
+        gamma = xixi/xixi_old
+        xixi_old = xixi
+      end if
+
+      phi_t = xi + gamma*phi_old
+      do jstate = 1, istate-1
+        ss = sum(phi_t(:)*psi(:,jstate))*dx
+        phi_t(:) = phi_t(:) - ss * psi(:,jstate)
+      end do
+      ss = sum(phi_t**2)*dx
+      phi_t = phi_t/sqrt(ss)
+
+! implementing theta ....
+
+    end do
+
+
+  end do
+
+
+end subroutine cg_eigen
+  
 !----------------------------------------------------------------------------------------!
 subroutine update_hamiltonian(gs_rt)
   use global_variables
@@ -195,12 +264,13 @@ subroutine hpsi(psi_in, hpsi_out)
 ! kinetic energy
   ix = 0
   hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-    +clap1*(psi_in(ix+1)) &
-    +clap2*(psi_in(ix+2)))
+    +clap1*(psi_in(ix+1)+psi_in(ix-1+nx)) &
+    +clap2*(psi_in(ix+2)+psi_in(ix-2+nx)))
+
   ix = 1
   hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
     +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
-    +clap2*(psi_in(ix+2)))
+    +clap2*(psi_in(ix+2)+psi_in(ix-2+nx)))
   do ix = 0+2, nx-1-2
     hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
       +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
@@ -209,11 +279,13 @@ subroutine hpsi(psi_in, hpsi_out)
   ix = nx -1 -1
   hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
     +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
-    +clap2*(psi_in(ix-2)))
+    +clap2*(psi_in(ix+2-nx)+psi_in(ix-2)))
+
   ix = nx -1
-  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-    +clap1*(psi_in(ix-1)) &
-    +clap2*(psi_in(ix-2)))
+    hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
+      +clap1*(psi_in(ix+1-nx)+psi_in(ix-1)) &
+      +clap2*(psi_in(ix+2-nx)+psi_in(ix-2)))
+
 
 ! local potential
   hpsi_out = hpsi_out + (v_ext + v_H)*psi_in
