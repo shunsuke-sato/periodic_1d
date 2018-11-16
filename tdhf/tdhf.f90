@@ -20,7 +20,7 @@ module global_variables
   real(8),allocatable :: xx(:)
 
 ! electronic system
-  integer :: nsate
+  integer :: nstate
   real(8) :: lattice_a   ! period of spatial potentials
 
 ! common quantities
@@ -56,7 +56,7 @@ subroutine input
   nstate = 3
   lattice_a = 5d0
 
-  nx = nstate*32
+  nx = 32*nstate
   length_x = nstate*lattice_a
   dx = length_x/nx
 
@@ -86,14 +86,16 @@ subroutine initialize
 ! set potentials
 ! external potential
   do ix = 0, nx-1
-    v_ext(ix) = cos(2d0*pi*xx(ix)/lattice_a)
+!    v_ext(ix) = cos(2d0*pi*xx(ix)/lattice_a)
+    v_ext(ix) = 0d0
   end do
 
 ! interacting potential
   do ix = 0, nx-1
     do jx = 0, nx-1
       dist = abs(xx(ix)-xx(jx))
-      v_int(ix,jx) = cos(pi*dist/lattice_a)**2
+!      v_int(ix,jx) = cos(pi*dist/lattice_a)**2
+      v_int(ix,jx) = 0d0
     end do
   end do
 
@@ -103,7 +105,7 @@ end subroutine initialize
 subroutine calc_ground_state
   use global_variables
   implicit none
-  integer :: iscf
+  integer :: iscf,ix
   integer :: istate, jstate
   real(8) :: ss
 
@@ -116,7 +118,7 @@ subroutine calc_ground_state
   do istate = 1, nstate
     do jstate = 1, istate-1
       ss = sum(psi(:,istate)*psi(:,jstate))*dx
-      psi(:,istate) = psi(:istate) - ss * psi(:,jstate)
+      psi(:,istate) = psi(:,istate) - ss * psi(:,jstate)
     end do
     ss = sum(psi(:,istate)**2)*dx
     psi(:,istate) = psi(:,istate)/sqrt(ss)
@@ -125,8 +127,9 @@ subroutine calc_ground_state
 
   call update_hamiltonian('gs')
 
-  do iscf = 1, 300
-    call cg_eigen(5)
+  do iscf = 1, 10
+    call cg_eigen(100)
+    call update_hamiltonian('gs')
   end do
 
 
@@ -141,16 +144,16 @@ subroutine cg_eigen(ncg_in)
   real(8) :: hpsi_t(0:nx-1)
   real(8) :: xi(0:nx-1)
   real(8) :: phi_t(0:nx-1),phi_old(0:nx-1)
-  real(8) :: lambda, xixi, xixi_old
-  integer :: istate
-  real(8) :: ss
+  real(8) :: lambda, xixi, xixi_old, gamma
+  integer :: istate, jstate, icg
+  real(8) :: ss, aa, bb, theta, res
 
   do istate = 1 ,nstate
 
     psi_t(:) = psi(:,istate)
     do jstate = 1, istate-1
       ss = sum(psi_t(:)*psi(:,jstate))*dx
-      psi_t(:) = psi_t(: - ss * psi(:,jstate)
+      psi_t(:) = psi_t(:) - ss * psi(:,jstate)
     end do
     ss = sum(psi_t(:)**2)*dx
     psi_t(:) = psi_t(:)/sqrt(ss)
@@ -167,7 +170,7 @@ subroutine cg_eigen(ncg_in)
     xixi = sum(xi**2)*dx
     xixi_old = xixi
 
-    do icg = 0, ncg
+    do icg = 0, ncg_in
 
       if(icg == 0)then
         gamma = 0d0
@@ -178,17 +181,57 @@ subroutine cg_eigen(ncg_in)
       end if
 
       phi_t = xi + gamma*phi_old
-      do jstate = 1, istate-1
-        ss = sum(phi_t(:)*psi(:,jstate))*dx
-        phi_t(:) = phi_t(:) - ss * psi(:,jstate)
-      end do
+      phi_old = phi_t
+      ss = sum(phi_t*psi_t)*dx
+      phi_t(:) = phi_t(:) - ss * psi_t(:)
       ss = sum(phi_t**2)*dx
       phi_t = phi_t/sqrt(ss)
 
-! implementing theta ....
+      bb = 2d0*sum(phi_t*hpsi_t)*dx
+      call hpsi(phi_t,hpsi_t)
+      aa = sum(phi_t*hpsi_t)*dx - lambda
+      aa = - aa ! fix
+      if(aa /= 0d0)then
+        theta = 0.5d0*atan(bb/aa)
+      else
+        theta = 0.25d0*pi
+      end if
+      psi_t = cos(theta)*psi_t + sin(theta)*phi_t
+
+
+      do jstate = 1, istate-1
+        ss = sum(psi_t(:)*psi(:,jstate))*dx
+        psi_t(:) = psi_t(:) - ss * psi(:,jstate)
+      end do
+      ss = sum(psi_t(:)**2)*dx
+      psi_t(:) = psi_t(:)/sqrt(ss)
+      if(icg == ncg_in)exit
+
+! calc xi
+      call hpsi(psi_t, hpsi_t)
+      lambda = sum(psi_t*hpsi_t)*dx
+      xi = lambda*psi_t - hpsi_t
+      do jstate = 1, istate-1
+        ss = sum(xi(:)*psi(:,jstate))*dx
+        xi(:) = xi(:) - ss * psi(:,jstate)
+      end do
+
+      xixi = sum(xi**2)*dx
 
     end do
+    psi(:,istate) = psi_t
 
+
+  end do
+
+
+  write(*,"(A)")"Eigenstates"
+  do istate = 1, nstate
+    call hpsi(psi(:,istate),hpsi_t)
+    lambda = sum(psi(:,istate)*hpsi_t)*dx
+    psi_t = hpsi_t - lambda*psi(:,istate)
+    res = sum(psi_t**2)*dx
+    write(*,"(A,2x,I4,2x,999e16.6e3)")"# orb.",istate,lambda,res
 
   end do
 
@@ -238,7 +281,7 @@ subroutine update_hamiltonian(gs_rt)
     do istate = 1, nstate
       do jx = 0, nx -1
         do ix = 0, nx -1
-          zrho_dm(ix,jx) = zrho_dm(ix,jx) + psi(ix,istate)*conjg(psi(jx,istate))
+          zrho_dm(ix,jx) = zrho_dm(ix,jx) + zpsi(ix,istate)*conjg(zpsi(jx,istate))
         end do
       end do
     end do
@@ -286,6 +329,7 @@ subroutine hpsi(psi_in, hpsi_out)
       +clap1*(psi_in(ix+1-nx)+psi_in(ix-1)) &
       +clap2*(psi_in(ix+2-nx)+psi_in(ix-2)))
 
+    hpsi_out = hpsi_out/dx**2
 
 ! local potential
   hpsi_out = hpsi_out + (v_ext + v_H)*psi_in
