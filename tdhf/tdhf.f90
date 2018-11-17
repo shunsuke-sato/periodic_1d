@@ -56,7 +56,7 @@ subroutine input
   nstate = 3
   lattice_a = 5d0
 
-  nx = 32*nstate
+  nx = 256*nstate
   length_x = nstate*lattice_a
   dx = length_x/nx
 
@@ -86,16 +86,16 @@ subroutine initialize
 ! set potentials
 ! external potential
   do ix = 0, nx-1
-!    v_ext(ix) = cos(2d0*pi*xx(ix)/lattice_a)
-    v_ext(ix) = 0d0
+    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
+!    v_ext(ix) = 0d0
   end do
 
 ! interacting potential
   do ix = 0, nx-1
     do jx = 0, nx-1
       dist = abs(xx(ix)-xx(jx))
-!      v_int(ix,jx) = cos(pi*dist/lattice_a)**2
-      v_int(ix,jx) = 0d0
+      v_int(ix,jx) = 0.1d0*cos(pi*dist/lattice_a)**2
+!      v_int(ix,jx) = 0d0
     end do
   end do
 
@@ -108,6 +108,13 @@ subroutine calc_ground_state
   integer :: iscf,ix
   integer :: istate, jstate
   real(8) :: ss
+  real(8), allocatable :: v_H_t(:), v_F_t(:,:)
+  real(8),parameter :: mixing = 0.5d0
+
+  allocate(v_H_t(0:nx-1), v_F_t(0:nx-1,0:nx-1))
+  v_H_t = 0d0
+  v_F_t = 0d0
+
 
 ! initialize wavefunction
   do istate = 1, nstate
@@ -127,9 +134,14 @@ subroutine calc_ground_state
 
   call update_hamiltonian('gs')
 
-  do iscf = 1, 10
-    call cg_eigen(100)
+  do iscf = 1, 600
+    call cg_eigen(20)
+    v_H_t = v_H
+    v_F_t = v_F
     call update_hamiltonian('gs')
+    v_H = mixing*v_H + (1d0-mixing)*v_H_t
+    v_F = mixing*v_F + (1d0-mixing)*v_F_t
+
   end do
 
 
@@ -231,7 +243,7 @@ subroutine cg_eigen(ncg_in)
     lambda = sum(psi(:,istate)*hpsi_t)*dx
     psi_t = hpsi_t - lambda*psi(:,istate)
     res = sum(psi_t**2)*dx
-    write(*,"(A,2x,I4,2x,999e16.6e3)")"# orb.",istate,lambda,res
+    write(*,"(A,2x,I4,2x,999e26.16e3)")"# orb.",istate,lambda,res
 
   end do
 
@@ -265,7 +277,7 @@ subroutine update_hamiltonian(gs_rt)
         end do
       end do
     end do
-    v_F = -rho_dm*v_int
+    v_F = -rho_dm*v_int*dx
 
   case('rt','RT')
 
@@ -285,12 +297,12 @@ subroutine update_hamiltonian(gs_rt)
         end do
       end do
     end do
-    zv_F = -zrho_dm*v_int
+    zv_F = -zrho_dm*v_int*dx
   case default
     stop 'Error update_hamiltonian'
   end select
 
-  do ix = 0, nx
+  do ix = 0, nx-1
     v_H(ix) = sum(v_int(:,ix)*rho(:))*dx
   end do
 
