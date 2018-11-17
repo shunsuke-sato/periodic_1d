@@ -20,7 +20,7 @@ module global_variables
   real(8),allocatable :: xx(:)
 
 ! electronic system
-  integer :: nstate
+  integer :: nstate, nstate_occ
   real(8) :: lattice_a   ! period of spatial potentials
 
 ! common quantities
@@ -53,11 +53,12 @@ subroutine input
   implicit none
 
 
-  nstate = 3
+  nstate = 5
+  nstate_occ = 3
   lattice_a = 5d0
 
-  nx = 256*nstate
-  length_x = nstate*lattice_a
+  nx = 256*nstate_occ
+  length_x = nstate_occ*lattice_a
   dx = length_x/nx
 
 end subroutine input
@@ -79,7 +80,7 @@ subroutine initialize
   allocate(psi(0:nx-1,nstate), rho_dm(0:nx-1,0:nx-1))
   allocate(v_F(0:nx-1, 0:nx-1))
 
-  allocate(zpsi(0:nx-1,nstate), zrho_dm(0:nx-1,0:nx-1))
+  allocate(zpsi(0:nx-1,nstate_occ), zrho_dm(0:nx-1,0:nx-1))
   allocate(zv_F(0:nx-1, 0:nx-1))
 
 
@@ -87,7 +88,7 @@ subroutine initialize
 ! external potential
   do ix = 0, nx-1
 !    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
-    v_ext(ix) = 0.5d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d9))**4)
+    v_ext(ix) = 1.0d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d0))**4)
 !    v_ext(ix) = 0d0
   end do
 
@@ -108,18 +109,23 @@ subroutine calc_ground_state
   implicit none
   integer :: iscf,ix
   integer :: istate, jstate
-  real(8) :: ss
-  real(8), allocatable :: v_H_t(:), v_F_t(:,:)
+  real(8) :: ss, diff_rho_dm
+  real(8),parameter :: epsilon_rho_dm = 1d-6
+  real(8), allocatable :: v_H_t(:), v_F_t(:,:), rho_dm_old(:,:)
   real(8),parameter :: mixing = 0.5d0
 
   allocate(v_H_t(0:nx-1), v_F_t(0:nx-1,0:nx-1))
+  allocate(rho_dm_old(0:nx-1,0:nx-1))
   v_H_t = 0d0
   v_F_t = 0d0
 
 
 ! initialize wavefunction
   do istate = 1, nstate
-    call random_number(psi(:,istate))
+!    call random_number(psi(:,istate))
+    do ix = 0, nx-1
+      psi(ix,istate) = cos(nstate*pi*xx(ix)/length_x)**2
+    end do
   end do
 
 ! Gram-Schmidt
@@ -134,6 +140,8 @@ subroutine calc_ground_state
 
 
   call update_hamiltonian('gs')
+  rho_dm_old = rho_dm
+  v_H = 0d0; v_F = 0d0
 
   do iscf = 1, 600
     call cg_eigen(20)
@@ -143,7 +151,21 @@ subroutine calc_ground_state
     v_H = mixing*v_H + (1d0-mixing)*v_H_t
     v_F = mixing*v_F + (1d0-mixing)*v_F_t
 
+    diff_rho_dm = sqrt(sum((rho_dm-rho_dm_old)**2)*dx**2)
+!    write(*,*)"diff_rho_dm",iscf,diff_rho_dm
+    if(diff_rho_dm < epsilon_rho_dm)exit
+    rho_dm_old = rho_dm
+
   end do
+
+  write(*,"(A,2x,I7,2x,e16.6e3)")"diff. rho_dm",iscf, diff_rho_dm
+
+  open(20,file='gs_wfn_rho_v.out')
+  write(20,"(A)")"# xx, rho, v_ext, v_H, psi"
+  do ix = 0,nx-1
+    write(20,"(999e26.16e3)")xx(ix),rho(ix),v_ext(ix),v_H(ix),psi(ix,:)
+  end do
+  close(20)
 
 
 end subroutine calc_ground_state
@@ -264,14 +286,14 @@ subroutine update_hamiltonian(gs_rt)
 
 ! one-body density
     rho = psi(:,1)**2
-    do istate = 2, nstate
+    do istate = 2, nstate_occ
       rho = rho + psi(:,istate)**2
     end do
     rho = 2d0*rho
     
 ! one-body reduced density matrix
     rho_dm = 0d0
-    do istate = 1, nstate
+    do istate = 1, nstate_occ
       do jx = 0, nx -1
         do ix = 0, nx -1
           rho_dm(ix,jx) = rho_dm(ix,jx) + psi(ix,istate)*psi(jx,istate)
@@ -284,14 +306,14 @@ subroutine update_hamiltonian(gs_rt)
 
 ! one-body density
     rho = abs(zpsi(:,1))**2
-    do istate = 2, nstate
+    do istate = 2, nstate_occ
       rho = rho + abs(zpsi(:,istate))**2
     end do
     rho = 2d0*rho
     
 ! one-body reduced density matrix
     zrho_dm = 0d0
-    do istate = 1, nstate
+    do istate = 1, nstate_occ
       do jx = 0, nx -1
         do ix = 0, nx -1
           zrho_dm(ix,jx) = zrho_dm(ix,jx) + zpsi(ix,istate)*conjg(zpsi(jx,istate))
