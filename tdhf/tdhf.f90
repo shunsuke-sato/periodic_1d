@@ -86,7 +86,8 @@ subroutine initialize
 ! set potentials
 ! external potential
   do ix = 0, nx-1
-    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
+!    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
+    v_ext(ix) = 0.5d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d9))**4)
 !    v_ext(ix) = 0d0
   end do
 
