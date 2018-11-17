@@ -33,6 +33,12 @@ module global_variables
 ! RT quantities
   complex(8),allocatable :: zpsi(:,:), zrho_dm(:,:), zv_F(:,:)
 
+!
+  integer :: nt
+  real(8) :: dt, total_time
+  real(8),allocatable :: jt(:),Act(:)
+
+  real(8) :: E0, omega0, Tpulse0
 
 end module global_variables
 !----------------------------------------------------------------------------------------!
@@ -44,6 +50,9 @@ program main
   call initialize
 
   call calc_ground_state
+
+
+  call calc_time_propagation
 
 end program main
 !----------------------------------------------------------------------------------------!
@@ -60,6 +69,16 @@ subroutine input
   nx = 256*nstate_occ
   length_x = nstate_occ*lattice_a
   dx = length_x/nx
+
+
+  E0 = 1d-3
+  omega0 = 1d-2
+  Tpulse0 = 20d0*2d0*pi/omega0
+
+  dt = 0.01d0
+  total_time = 40d0*2d0(pi/omega0
+  nt = aint(total_time/dt)+1
+
 
 end subroutine input
 !----------------------------------------------------------------------------------------!
@@ -88,7 +107,7 @@ subroutine initialize
 ! external potential
   do ix = 0, nx-1
 !    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
-    v_ext(ix) = 1.0d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d0))**4)
+    v_ext(ix) = 0.5d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d0))**4)
 !    v_ext(ix) = 0d0
   end do
 
@@ -380,9 +399,168 @@ subroutine hpsi(psi_in, hpsi_out)
 
 end subroutine hpsi
 !----------------------------------------------------------------------------------------!
+subroutine zhpsi_all(zpsi_in, zhpsi_out, act_t)
+  use global_variables
+  implicit none
+  real(8),intent(in) :: psi_in(0:nx-1,1:nstate_occ)
+  real(8),intent(out) :: hpsi_out(0:nx-1,1:nstate_occ)
+  integer :: ix, ib
+  real(8) :: c0, c1, c2
+  real(8) :: g0, g1, g2
+
+  c0 = -0.5d0*clap0/dx**2
+  c1 = -0.5d0*clap1/dx**2
+  c2 = -0.5d0*clap2/dx**2
+  g1 = cgra1/dx*2d0*act_t
+  g2 = cgra2/dx*2d0*act_t
+
+  do ib = 1, nstate_occ
+
+! kinetic energy
+    ix = 0
+      zhpsi_out(ix,ib) = c0*zpsi_in(ix,ib) &
+        +c1*(zpsi_in(ix+1,ib)+zpsi_in(ix-1+nx,ib)) &
+        +c2*(zpsi_in(ix+2,ib)+zpsi_in(ix-2+nx,ib)) &
+        -zI*(&
+         g1*(zpsi_in(ix+1,ib)-zpsi_in(ix-1+nx,ib)) &
+        +g2*(zpsi_in(ix+2,ib)-zpsi_in(ix-2+nx,ib)))
+
+    ix = 1
+      zhpsi_out(ix,ib) = c0*zpsi_in(ix,ib) &
+        +c1*(zpsi_in(ix+1,ib)+zpsi_in(ix-1,ib)) &
+        +c2*(zpsi_in(ix+2,ib)+zpsi_in(ix-2+nx,ib)) &
+        -zI*(&
+         g1*(zpsi_in(ix+1,ib)-zpsi_in(ix-1,ib)) &
+        +g2*(zpsi_in(ix+2,ib)-zpsi_in(ix-2+nx,ib)))
+
+
+
+
+    do ix = 0+2, nx-1-2
+      zhpsi_out(ix,ib) = c0*zpsi_in(ix,ib) &
+        +c1*(zpsi_in(ix+1,ib)+zpsi_in(ix-1,ib)) &
+        +c2*(zpsi_in(ix+2,ib)+zpsi_in(ix-2,ib)) &
+        -zI*(&
+         g1*(zpsi_in(ix+1,ib)-zpsi_in(ix-1,ib)) &
+        +g2*(zpsi_in(ix+2,ib)-zpsi_in(ix-2,ib)))
+    end do
+
+    ix = nx -1 -1
+      zhpsi_out(ix,ib) = c0*zpsi_in(ix,ib) &
+        +c1*(zpsi_in(ix+1,ib)+zpsi_in(ix-1,ib)) &
+        +c2*(zpsi_in(ix+2-nx,ib)+zpsi_in(ix-2,ib)) &
+        -zI*(&
+         g1*(zpsi_in(ix+1,ib)-zpsi_in(ix-1,ib)) &
+        +g2*(zpsi_in(ix+2-nx,ib)-zpsi_in(ix-2,ib)))
+
+      ix = nx -1
+      zhpsi_out(ix,ib) = c0*zpsi_in(ix,ib) &
+        +c1*(zpsi_in(ix+1-nx,ib)+zpsi_in(ix-1,ib)) &
+        +c2*(zpsi_in(ix+2-nx,ib)+zpsi_in(ix-2,ib)) &
+        -zI*(&
+         g1*(zpsi_in(ix+1-nx,ib)-zpsi_in(ix-1,ib)) &
+        +g2*(zpsi_in(ix+2-nx,ib)-zpsi_in(ix-2,ib)))
+
+! local potential
+    zhpsi_out(:,ib) = zhpsi_out(:,ib) &
+      + (v_ext(:) + v_H(:) + 0.5d0*act_t**2)*zpsi_in(:,ib)
+
+  end do
+
+! nonlocal potential
+! this part has to be optimized by BLAS routine
+  zhpsi_out = zhpsi_out + matmul(zv_F,zpsi_in)
+
+
+end subroutine zhpsi_all
 !----------------------------------------------------------------------------------------!
+subroutine calc_time_propagation
+  use global_variables
+  implicit none
+  integer :: it
+
+  zpsi(:,1:nstate_occ) = psi(:,1:nstate_occ)
+  call init_laser_field
+
+
+  do it = 0, nt
+
+    call dt_evolve(it)
+
+
+  end do
+
+
+end subroutine calc_time_propagation
 !----------------------------------------------------------------------------------------!
+! time-propagation routine with predictor-corrector method
+subroutine dt_evolve(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  complex(8) :: zpsi_t(0:nx-1,nstate_occ)
+  real(8) :: Act_t
+
+
+  zpsi_t = zpsi
+  
+  Act_t = Act(it)
+
+! predict
+  call propagator(Act,dt*0.5d0)
+  call update_hamiltonian('rt')
+
+! correct
+  zpsi = zpsi_t
+  Act_t = 0.5d0*(Act(it+1)+Act(it))
+  call propagator(Act,dt*0.5d0)
+  call update_hamiltonian('rt')
+
+
+end subroutine dt_evolve
 !----------------------------------------------------------------------------------------!
+subroutine propagator(Act_t, dt_t)
+  use global_variables
+  implicit none
+  real(8),intent(in) :: Act_t, dt_t
+  integer,parameter :: nexp_Taylor = 4
+  integer :: iexp
+  complex(8) :: zpsi_t(0:nx-1,1:nstate_occ)
+  complex(8) :: zhpsi_t(0:nx-1,1:nstate_occ)
+  complex(8) :: zfact
+
+
+  zfact = 1d0
+  zpsi_t = zpsi
+  do iexp = 1, nexp_Taylor
+    zfact = zfact*(-zI*dt_t)/iexp
+    call zhpsi_all(zpsi_t, zhpsi_t, act_t)
+    zpsi = zpsi + zfact*zhpsi_t
+    zpsi_t = zhpsi_t
+  end do
+    
+
+end subroutine propagator
+!----------------------------------------------------------------------------------------!
+subroutine init_laser_field
+  use global_variables
+  implicit none
+  real(8) :: a0, tt, x
+  
+  allocate(Act(-1:nt+1), jt(-1:nt+1))
+  Act = 0d0
+  jt = 0d0
+
+  a0 = -E0/omega0
+
+
+  do it = 0, nt
+    tt = dt*it
+    x = tt-0.5d0*tpulse0
+    Act(it) = a0*cos(pi*x/tpulse0)**2*sin(omega0*x)
+  end do
+
+end subroutine init_laser_field
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
