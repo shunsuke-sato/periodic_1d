@@ -302,34 +302,38 @@ subroutine hpsi(psi_in, hpsi_out)
   real(8),intent(in) :: psi_in(0:nx-1)
   real(8),intent(out) :: hpsi_out(0:nx-1)
   integer :: ix
+  real(8) :: c0, c1, c2
+
+  c0 = -0.5d0*clap0/dx**2
+  c1 = -0.5d0*clap1/dx**2
+  c2 = -0.5d0*clap2/dx**2
 
 
 ! kinetic energy
   ix = 0
-  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-    +clap1*(psi_in(ix+1)+psi_in(ix-1+nx)) &
-    +clap2*(psi_in(ix+2)+psi_in(ix-2+nx)))
+  hpsi_out(ix) = c0*psi_in(ix) &
+    +c1*(psi_in(ix+1)+psi_in(ix-1+nx)) &
+    +c2*(psi_in(ix+2)+psi_in(ix-2+nx))
 
   ix = 1
-  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-    +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
-    +clap2*(psi_in(ix+2)+psi_in(ix-2+nx)))
+  hpsi_out(ix) = c0*psi_in(ix) &
+    +c1*(psi_in(ix+1)+psi_in(ix-1)) &
+    +c2*(psi_in(ix+2)+psi_in(ix-2+nx))
   do ix = 0+2, nx-1-2
-    hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-      +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
-      +clap2*(psi_in(ix+2)+psi_in(ix-2)))
+    hpsi_out(ix) = c0*psi_in(ix) &
+      +c1*(psi_in(ix+1)+psi_in(ix-1)) &
+      +c2*(psi_in(ix+2)+psi_in(ix-2))
   end do
   ix = nx -1 -1
-  hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-    +clap1*(psi_in(ix+1)+psi_in(ix-1)) &
-    +clap2*(psi_in(ix+2-nx)+psi_in(ix-2)))
+  hpsi_out(ix) = c0*psi_in(ix) &
+    +c1*(psi_in(ix+1)+psi_in(ix-1)) &
+    +c2*(psi_in(ix+2-nx)+psi_in(ix-2))
 
   ix = nx -1
-    hpsi_out(ix) = -0.5d0*(clap0*psi_in(ix) &
-      +clap1*(psi_in(ix+1-nx)+psi_in(ix-1)) &
-      +clap2*(psi_in(ix+2-nx)+psi_in(ix-2)))
+    hpsi_out(ix) = c0*psi_in(ix) &
+      +c1*(psi_in(ix+1-nx)+psi_in(ix-1)) &
+      +c2*(psi_in(ix+2-nx)+psi_in(ix-2))
 
-    hpsi_out = hpsi_out/dx**2
 
 ! local potential
   hpsi_out = hpsi_out + (v_ext + v_H)*psi_in
