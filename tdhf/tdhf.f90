@@ -66,17 +66,17 @@ subroutine input
   nstate_occ = 3
   lattice_a = 5d0
 
-  nx = 256*nstate_occ
+  nx = 32*nstate_occ
   length_x = nstate_occ*lattice_a
   dx = length_x/nx
 
 
-  E0 = 1d-3
-  omega0 = 1d-2
-  Tpulse0 = 20d0*2d0*pi/omega0
+  E0 = -1d-5
+  omega0 = 1.17685180813d0 !0.358d0 !1d-2
+  Tpulse0 = 40d0*2d0*pi/omega0
 
   dt = 0.01d0
-  total_time = 40d0*2d0(pi/omega0
+  total_time = tpulse0*2d0
   nt = aint(total_time/dt)+1
 
 
@@ -107,7 +107,7 @@ subroutine initialize
 ! external potential
   do ix = 0, nx-1
 !    v_ext(ix) = -cos(pi*xx(ix)/lattice_a)**2
-    v_ext(ix) = 0.5d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d0))**4)
+    v_ext(ix) = 1.0d0*(cos(pi*xx(ix)/lattice_a)**2 + cos(pi*(xx(ix)/lattice_a-0.25d0))**4)
 !    v_ext(ix) = 0d0
   end do
 
@@ -115,7 +115,8 @@ subroutine initialize
   do ix = 0, nx-1
     do jx = 0, nx-1
       dist = abs(xx(ix)-xx(jx))
-      v_int(ix,jx) = 0.1d0*cos(pi*dist/lattice_a)**2
+!      v_int(ix,jx) = 0.1d0*cos(pi*dist/lattice_a)**2
+      v_int(ix,jx) = 0.5d0*cos(pi*dist/length_x)**2
 !      v_int(ix,jx) = 0d0
     end do
   end do
@@ -129,7 +130,7 @@ subroutine calc_ground_state
   integer :: iscf,ix
   integer :: istate, jstate
   real(8) :: ss, diff_rho_dm
-  real(8),parameter :: epsilon_rho_dm = 1d-6
+  real(8),parameter :: epsilon_rho_dm = 1d-10
   real(8), allocatable :: v_H_t(:), v_F_t(:,:), rho_dm_old(:,:)
   real(8),parameter :: mixing = 0.5d0
 
@@ -172,7 +173,7 @@ subroutine calc_ground_state
 
     diff_rho_dm = sqrt(sum((rho_dm-rho_dm_old)**2)*dx**2)
 !    write(*,*)"diff_rho_dm",iscf,diff_rho_dm
-    if(diff_rho_dm < epsilon_rho_dm)exit
+!    if(diff_rho_dm < epsilon_rho_dm)exit
     rho_dm_old = rho_dm
 
   end do
@@ -199,8 +200,9 @@ subroutine cg_eigen(ncg_in)
   real(8) :: xi(0:nx-1)
   real(8) :: phi_t(0:nx-1),phi_old(0:nx-1)
   real(8) :: lambda, xixi, xixi_old, gamma
-  integer :: istate, jstate, icg
-  real(8) :: ss, aa, bb, theta, res
+  integer :: istate, jstate, icg, i
+  real(8) :: ss, aa, bb, theta 
+  real(8) :: eps(nstate),res(nstate)
 
   do istate = 1 ,nstate
 
@@ -282,11 +284,33 @@ subroutine cg_eigen(ncg_in)
   write(*,"(A)")"Eigenstates"
   do istate = 1, nstate
     call hpsi(psi(:,istate),hpsi_t)
-    lambda = sum(psi(:,istate)*hpsi_t)*dx
-    psi_t = hpsi_t - lambda*psi(:,istate)
-    res = sum(psi_t**2)*dx
-    write(*,"(A,2x,I4,2x,999e26.16e3)")"# orb.",istate,lambda,res
+    eps(istate) = sum(psi(:,istate)*hpsi_t)*dx
+    psi_t = hpsi_t - eps(istate)*psi(:,istate)
+    res(istate) = sum(psi_t**2)*dx
+  end do
 
+  do i = 1,nstate
+    do istate = 1,nstate-1
+      jstate = istate + 1
+      if(eps(istate)>eps(jstate))then
+
+        psi_t = psi(:,istate)
+        lambda = eps(istate)
+        ss = res(istate)
+
+        psi(:,istate) = psi(:,jstate)
+        eps(istate)= eps(jstate)
+        res(istate) = res(jstate)
+
+        psi(:,jstate) = psi_t 
+        eps(jstate) = lambda
+        res(jstate) = ss
+      end if
+    end do
+  end do
+
+  do istate = 1,nstate
+    write(*,"(A,2x,I4,2x,999e26.16e3)")"# orb.",istate,eps(istate),res(istate)
   end do
 
 
@@ -402,18 +426,18 @@ end subroutine hpsi
 subroutine zhpsi_all(zpsi_in, zhpsi_out, act_t)
   use global_variables
   implicit none
-  real(8),intent(in) :: psi_in(0:nx-1,1:nstate_occ)
-  real(8),intent(out) :: hpsi_out(0:nx-1,1:nstate_occ)
+  complex(8),intent(in) :: zpsi_in(0:nx-1,1:nstate_occ)
+  complex(8),intent(out) :: zhpsi_out(0:nx-1,1:nstate_occ)
+  real(8),intent(in) :: act_t
   integer :: ix, ib
   real(8) :: c0, c1, c2
-  real(8) :: g0, g1, g2
+  real(8) :: g1, g2
 
   c0 = -0.5d0*clap0/dx**2
   c1 = -0.5d0*clap1/dx**2
   c2 = -0.5d0*clap2/dx**2
   g1 = cgra1/dx*2d0*act_t
   g2 = cgra2/dx*2d0*act_t
-
   do ib = 1, nstate_occ
 
 ! kinetic energy
@@ -470,6 +494,7 @@ subroutine zhpsi_all(zpsi_in, zhpsi_out, act_t)
 ! nonlocal potential
 ! this part has to be optimized by BLAS routine
   zhpsi_out = zhpsi_out + matmul(zv_F,zpsi_in)
+!  zhpsi_out = zhpsi_out + matmul(v_F,zpsi_in) ! Hartree
 
 
 end subroutine zhpsi_all
@@ -477,19 +502,34 @@ end subroutine zhpsi_all
 subroutine calc_time_propagation
   use global_variables
   implicit none
-  integer :: it
+  integer :: it, it_t
 
   zpsi(:,1:nstate_occ) = psi(:,1:nstate_occ)
+  call update_hamiltonian('rt')
   call init_laser_field
-
+  call calc_current(jt(0),Act(0))
 
   do it = 0, nt
-
+    write(*,*)'it=',it,nt
     call dt_evolve(it)
+    call calc_current(jt(it+1),Act(it+1))
 
+    if(mod(it,2000) == 0)then
+      open(30,file='Act_jt.out')
+      do it_t = 0, nt
+        write(30,"(999e26.16e3)")dt*it_t,Act(it_t),jt(it_t)
+      end do
+      close(30)
+    end if
 
   end do
 
+
+  open(30,file='Act_jt.out')
+  do it_t = 0, nt
+    write(30,"(999e26.16e3)")dt*it_t,Act(it_t),jt(it_t)
+  end do
+  close(30)
 
 end subroutine calc_time_propagation
 !----------------------------------------------------------------------------------------!
@@ -507,13 +547,13 @@ subroutine dt_evolve(it)
   Act_t = Act(it)
 
 ! predict
-  call propagator(Act,dt*0.5d0)
+  call propagator(Act_t,dt*0.5d0)
   call update_hamiltonian('rt')
 
 ! correct
   zpsi = zpsi_t
   Act_t = 0.5d0*(Act(it+1)+Act(it))
-  call propagator(Act,dt*0.5d0)
+  call propagator(Act_t,dt)
   call update_hamiltonian('rt')
 
 
@@ -545,6 +585,7 @@ end subroutine propagator
 subroutine init_laser_field
   use global_variables
   implicit none
+  integer :: it
   real(8) :: a0, tt, x
   
   allocate(Act(-1:nt+1), jt(-1:nt+1))
@@ -553,15 +594,71 @@ subroutine init_laser_field
 
   a0 = -E0/omega0
 
+! impulse
+!  Act(0:nt+1) = a0
+!  return
 
+! laser
   do it = 0, nt
     tt = dt*it
     x = tt-0.5d0*tpulse0
-    Act(it) = a0*cos(pi*x/tpulse0)**2*sin(omega0*x)
+    if(abs(x)<0.5d0*tpulse0)then
+      Act(it) = a0*cos(pi*x/tpulse0)**2*sin(omega0*x)
+    end if
   end do
 
 end subroutine init_laser_field
 !----------------------------------------------------------------------------------------!
+subroutine calc_current(jt_t, act_t)
+  use global_variables
+  implicit none
+  real(8),intent(in)  :: act_t
+  real(8),intent(out) :: jt_t
+  complex(8) :: zgpsi_t(0:nx-1)
+  integer :: istate, ix
+  real(8) :: g1, g2
+
+
+  g1 = cgra1/dx
+  g2 = cgra2/dx
+ 
+  jt_t = 0d0
+
+  do istate = 1, nstate_occ
+
+! compute gradient
+    ix = 0
+    zgpsi_t(ix) = -zI*(&
+       g1*(zpsi(ix+1,istate)-zpsi(ix-1+nx,istate)) &
+      +g2*(zpsi(ix+2,istate)-zpsi(ix-2+nx,istate)))
+
+    ix = 1
+    zgpsi_t(ix) = -zI*(&
+       g1*(zpsi(ix+1,istate)-zpsi(ix-1,istate)) &
+      +g2*(zpsi(ix+2,istate)-zpsi(ix-2+nx,istate)))
+    
+    do ix = 0+2, nx-1-2
+      zgpsi_t(ix) = -zI*(&
+         g1*(zpsi(ix+1,istate)-zpsi(ix-1,istate)) &
+        +g2*(zpsi(ix+2,istate)-zpsi(ix-2,istate)))
+    end do
+
+    ix = nx -1 -1
+    zgpsi_t(ix) = -zI*(&
+       g1*(zpsi(ix+1,istate)-zpsi(ix-1,istate)) &
+      +g2*(zpsi(ix+2-nx,istate)-zpsi(ix-2,istate)))
+
+    ix = nx -1
+    zgpsi_t(ix) = -zI*(&
+       g1*(zpsi(ix+1-nx,istate)-zpsi(ix-1,istate)) &
+      +g2*(zpsi(ix+2-nx,istate)-zpsi(ix-2,istate)))
+
+
+    jt_t = jt_t + real( sum(conjg(zpsi(:,istate))*(zgpsi_t(:)+act_t*zpsi(:,istate)))*dx )
+
+  end do
+
+end subroutine calc_current
 !----------------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------------!
 
