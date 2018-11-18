@@ -142,10 +142,10 @@ subroutine calc_ground_state
 
 ! initialize wavefunction
   do istate = 1, nstate
-!    call random_number(psi(:,istate))
-    do ix = 0, nx-1
-      psi(ix,istate) = cos(nstate*pi*xx(ix)/length_x)**2
-    end do
+    call random_number(psi(:,istate))
+!    do ix = 0, nx-1
+!      psi(ix,istate) = cos(istate*pi*xx(ix)/length_x)**2
+!    end do
   end do
 
 ! Gram-Schmidt
