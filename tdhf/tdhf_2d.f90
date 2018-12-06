@@ -23,19 +23,20 @@ module global_variables
   real(8),allocatable :: xx(:),yy(:)
 
 ! electronic system
-  integer :: nstate, nk, nkx, nky
+  integer :: nstate, nstate_occ, nk, nkx, nky
   real(8) :: lattice_ax,lattice_ay   ! period of spatial potentials
   real(8),allocatable :: kx(:),ky(:),kx0(:),ky0(:)
 
 ! common quantities
-  real(8),allocatable :: v_ext(:,:)
+  real(8),allocatable :: v_ext(:,:),v_int(:,:)
   real(8),allocatable :: rho(:,:), v_H(:,:)
-  real(8),parameter :: vint = 0.1d0, vsigma = 1d0
+
 
 ! GS quantities
   real(8),allocatable :: psi(:,:,:,:)
 
 ! RT quantities
+  real(8),allocatable :: occ(:,:)
   complex(8),allocatable :: zpsi(:,:,:,:)
 
 !
@@ -64,6 +65,7 @@ subroutine input
 
 
   nstate = 5
+  nstate_occ = 3
   nkx = 3
   nky = 3
   nk = nkx*nky
@@ -162,10 +164,15 @@ subroutine initialize
   
 
   allocate(v_ext(0:nx-1,0:ny-1))
+  allocate(v_int(0:nx-1,0:ny-1))
   allocate(rho(0:nx-1,0:ny-1))
   allocate(psi(0:nx-1,0:ny-1,nstate,nk))
 
   allocate(zpsi(0:nx-1,0:ny-1,nstate,nk))
+  allocate(occ(nstate,nk))
+  occ = 0d0
+  occ(1:nstate_occ,:) = 2d0/dble(nk)
+  
 
   ! set potential
   do iy = 0,ny-1
@@ -174,6 +181,15 @@ subroutine initialize
                               *cos(pi*yy(iy)/lattice_ay)**2&
                               +sin(pi*xx(ix)/lattice_ax)**2&
                               *cos(pi*(yy(iy)-0.25d0)/lattice_ay)**2)
+     end do
+  end do
+
+  ! set potential
+  do iy = 0,ny-1
+     do ix = 0,nx-1
+        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
+                              *cos(pi*yy(iy)/lattice_ay)**2)
+
      end do
   end do
 
@@ -214,7 +230,7 @@ subroutine calc_ground_state
      end do
   end do
 
- 
+  call update_hamiltonian
 
   
 end subroutine calc_ground_state
@@ -272,5 +288,38 @@ subroutine zhpsi(zpsi_in,zhpsi_out,ktmp)
 
 end subroutine zhpsi
 !----------------------------------------------------------------------------------!
+subroutine update_hamiltonian
+  use global_variables
+  implicit none
+  integer :: ik,istate
+  integer :: ix,iy, ixt,iyt ixd,iyd
+
+  rho = 0d0
+  do ik = 1,nk
+    do istate = 1, nstate_occ
+      rho = rho + occ(istate,ik)*abs(zpsi(:,:,istate,ik))**2
+    end do
+  end do
+
+! calculate Hartree potential
+! this part should be optimized, probably, by FFT.
+  v_h = 0d0
+  do iy = 0, ny-1
+    do ix = 0, nx-1
+
+      do iyt=0,ny-1
+        do ixt=0,nx-1
+          v_h(ix,iy) = v_h(ix,iy) &
+            + v_int(abs(ixt-ix),abs(iyt-iy))*rho(ixt,iyt)
+
+        end do
+      end do
+    end do
+  end do
+
+  vh = vh*dx*dy
+  
+
+end subroutine update_hamiltonian
 !----------------------------------------------------------------------------------!
 
