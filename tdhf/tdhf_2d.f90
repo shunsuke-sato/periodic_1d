@@ -190,9 +190,9 @@ subroutine initialize
   ! set potential
   do iy = 0,ny-1
     do ix = 0,nx-1
-      v_int(ix,iy) = 0d0
-!        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
-!                              *cos(pi*yy(iy)/lattice_ay)**2)
+!      v_int(ix,iy) = 0d0
+        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
+                              *cos(pi*yy(iy)/lattice_ay)**2)
 
     end do
   end do
