@@ -96,7 +96,7 @@ subroutine initialize
   use global_variables
   implicit none
   integer :: ix,iy,ixt,iyt
-  integer :: ikx, iky
+  integer :: ikx, iky, ik
 
   allocate(xx(0:nx-1),yy(0:ny-1))
   do ix = 0, nx-1
@@ -108,8 +108,10 @@ subroutine initialize
 
 
   allocate(kx(nk),ky(nk),kx0(nk),ky0(nk))
+  ik = 0
   do ikx =1,nkx
      do iky =1,nky
+       ik = ik + 1
         if(ikx-1 <= nkx/2)then
            kx0(ik) = 2d0*pi*dble(ikx-1)/dble(nkx)
         else
@@ -130,7 +132,7 @@ subroutine initialize
   
 
   allocate(ixp1(0:nx-1),ixm1(0:nx-1),ixp2(0:nx-1),ixm2(0:nx-1))
-  allocate(iyp1(0:ny-1),iym1(0:ny-1),iyp2(0:ny-1),iym2(0:yx-1))
+  allocate(iyp1(0:ny-1),iym1(0:ny-1),iyp2(0:ny-1),iym2(0:ny-1))
 
   do ix = 0,nx-1
 ! xp1     
@@ -250,6 +252,7 @@ subroutine cg_eigen(ncg_in)
   complex(8) :: zs
   real(8) :: eps(nstate),res(nstate)
   real(8) :: kxy(2)
+  integer :: ik
 
   do ik = 1, nk
     kxy(1) = kx0(ik); kxy(2) = ky0(ik)
@@ -294,7 +297,7 @@ subroutine cg_eigen(ncg_in)
         phi_t = phi_t/sqrt(ss)
 
         bb = 2d0*sum(conjg(phi_t)*hpsi_t)*dx*dy
-        call zhpsi(phi_t,hpsi_t)        
+        call zhpsi(phi_t,hpsi_t, kxy)
         aa = sum(conjg(phi_t)*hpsi_t)*dx*dy-lambda
         aa = -aa ! fix: there is a typo in the reference paper.
 
@@ -310,12 +313,12 @@ subroutine cg_eigen(ncg_in)
           psi_t(:,:) = psi_t(:,:) - zs*zpsi(:,:,jstate,ik)
         end do
         ss = sum(abs(psi_t)**2)*dx*dy
-        psi_t(:) = psi_t(:)/sqrt(ss)
+        psi_t = psi_t/sqrt(ss)
 
         if(icg == ncg_in)exit
 
 ! calc xi
-        call zhpsi(psi_t,hpsi_t)
+        call zhpsi(psi_t,hpsi_t, kxy)
         lambda = sum(conjg(psi_t)*hpsi_t)*dx*dy
         xi = lambda*psi_t - hpsi_t        
         do jstate = 1, istate -1
@@ -363,16 +366,16 @@ subroutine zhpsi(zpsi_in,zhpsi_out,ktmp)
   do iy = 0,ny-1
     do ix = 0,nx-1
 
-      zhpsi_out(ix,iy) = c0*psi_in(ix,iy) &
-        +c1x*(psi_in(ixp1(ix),iy)+psi_in(ixm1(ix),iy)) &
-        +c2x*(psi_in(ixp2(ix),iy)+psi_in(ixm2(ix),iy)) &
-        +c1y*(psi_in(ix,iyp1(iy))+psi_in(ix,iym1(iy))) &
-        +c2y*(psi_in(ix,iyp2(iy))+psi_in(ix,iym2(iy))) &
+      zhpsi_out(ix,iy) = c0*zpsi_in(ix,iy) &
+        +c1x*(zpsi_in(ixp1(ix),iy)+zpsi_in(ixm1(ix),iy)) &
+        +c2x*(zpsi_in(ixp2(ix),iy)+zpsi_in(ixm2(ix),iy)) &
+        +c1y*(zpsi_in(ix,iyp1(iy))+zpsi_in(ix,iym1(iy))) &
+        +c2y*(zpsi_in(ix,iyp2(iy))+zpsi_in(ix,iym2(iy))) &
         -zI*(&
-         g1x*(psi_in(ixp1(ix),iy)-psi_in(ixm1(ix),iy)) &
-        +g2x*(psi_in(ixp2(ix),iy)-psi_in(ixm2(ix),iy)) &
-        +g1y*(psi_in(ix,iyp1(iy))-psi_in(ix,iym1(iy))) &
-        +g2y*(psi_in(ix,iyp2(iy))-psi_in(ix,iym2(iy))))
+         g1x*(zpsi_in(ixp1(ix),iy)-zpsi_in(ixm1(ix),iy)) &
+        +g2x*(zpsi_in(ixp2(ix),iy)-zpsi_in(ixm2(ix),iy)) &
+        +g1y*(zpsi_in(ix,iyp1(iy))-zpsi_in(ix,iym1(iy))) &
+        +g2y*(zpsi_in(ix,iyp2(iy))-zpsi_in(ix,iym2(iy))))
 
     end do
   end do
@@ -389,7 +392,7 @@ subroutine update_hamiltonian
   use global_variables
   implicit none
   integer :: ik,istate
-  integer :: ix,iy, ixt,iyt ixd,iyd
+  integer :: ix,iy, ixt,iyt, ixd,iyd
 
   rho = 0d0
   do ik = 1,nk
@@ -414,7 +417,7 @@ subroutine update_hamiltonian
     end do
   end do
 
-  vh = vh*dx*dy
+  v_h = v_h*dx*dy
   
 
 end subroutine update_hamiltonian
