@@ -65,8 +65,8 @@ subroutine input
 
 
   nstate = 5
-  nstate_occ = 3
-  nkx = 3
+  nstate_occ = 1
+  nkx = 1
   nky = 3
   nk = nkx*nky
   lattice_ax = 5d0
@@ -103,7 +103,7 @@ subroutine initialize
      xx(ix) = dx*ix
   end do
   do iy = 0, ny-1
-     yy(ix) = dy*iy
+     yy(iy) = dy*iy
   end do
 
 
@@ -167,6 +167,7 @@ subroutine initialize
 
   allocate(v_ext(0:nx-1,0:ny-1))
   allocate(v_int(0:nx-1,0:ny-1))
+  allocate(v_h(0:nx-1,0:ny-1))
   allocate(rho(0:nx-1,0:ny-1))
   allocate(psi(0:nx-1,0:ny-1,nstate,nk))
 
@@ -188,11 +189,12 @@ subroutine initialize
 
   ! set potential
   do iy = 0,ny-1
-     do ix = 0,nx-1
-        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
-                              *cos(pi*yy(iy)/lattice_ay)**2)
+    do ix = 0,nx-1
+      v_int(ix,iy) = 0d0
+!        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
+!                              *cos(pi*yy(iy)/lattice_ay)**2)
 
-     end do
+    end do
   end do
 
   
@@ -208,6 +210,8 @@ subroutine calc_ground_state
   real(8) :: ss
   complex(8) :: zs
   real(8) :: rand_tmp(0:nx-1,0:ny-1)
+  integer :: iscf
+
   kx = kx0
   ky = ky0
 
@@ -222,7 +226,7 @@ subroutine calc_ground_state
 ! Gram-Schmidt  
   do ik = 1, nk
      do istate = 1, nstate
-        do jstate = istate + 1, nstate
+        do jstate = 1, istate-1
            zs = sum(conjg(zpsi(:,:,jstate,ik))*zpsi(:,:,istate,ik))*dx*dy
            zpsi(:,:,istate,ik) = zpsi(:,:,istate,ik) &
                 -zs*zpsi(:,:,jstate,ik)
@@ -233,6 +237,12 @@ subroutine calc_ground_state
   end do
 
   call update_hamiltonian
+
+  do iscf = 1, 600
+    call cg_eigen(20)
+    call update_hamiltonian
+
+  end do
 
   
 end subroutine calc_ground_state
@@ -331,7 +341,43 @@ subroutine cg_eigen(ncg_in)
       zpsi(:,:,istate,ik) = psi_t
 
     end do
+
+
+    do istate = 1, nstate
+      call zhpsi(zpsi(:,:,istate,ik),hpsi_t, kxy)
+      eps(istate) = sum(conjg(zpsi(:,:,istate,ik))*hpsi_t)*dx*dy
+      psi_t = hpsi_t - eps(istate)*zpsi(:,:,istate,ik)
+      res(istate) = sum(psi_t**2)*dx
+    end do
+
+    do i = 1,nstate
+      do istate = 1,nstate-1
+        jstate = istate + 1
+        if(eps(istate)>eps(jstate))then
+          
+          psi_t = zpsi(:,:,istate,ik)
+          lambda = eps(istate)
+          ss = res(istate)
+          
+          zpsi(:,:,istate,ik) = zpsi(:,:,jstate,ik)
+          eps(istate)= eps(jstate)
+          res(istate) = res(jstate)
+
+          zpsi(:,:,jstate,ik) = psi_t 
+          eps(jstate) = lambda
+          res(jstate) = ss
+        end if
+      end do
+    end do
+    
+
+
+    do istate = 1,nstate
+      write(*,"(A,2x,I4,2x,I4,2x,999e26.16e3)")"ik, # orb.",ik,istate,eps(istate),res(istate)
+    end do
+    write(*,*)
   end do
+
 
 end subroutine cg_eigen
 !----------------------------------------------------------------------------------!
@@ -361,7 +407,7 @@ subroutine zhpsi(zpsi_in,zhpsi_out,ktmp)
   g2y = ktmp(2)*cgra2/dy
 
 
-  c0 = c0x+c0y-0.5d0*sum(ktmp(:)**2)
+  c0 = c0x+c0y+0.5d0*sum(ktmp(:)**2)
 
   do iy = 0,ny-1
     do ix = 0,nx-1
