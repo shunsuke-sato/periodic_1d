@@ -214,12 +214,63 @@ subroutine calc_ground_state
      end do
   end do
 
-
  
 
   
 end subroutine calc_ground_state
 !----------------------------------------------------------------------------------!
+subroutine zhpsi(zpsi_in,zhpsi_out,ktmp)
+  use global_variables
+  implicit none
+  complex(8),intent(in) :: zpsi_in(0:nx-1,0:ny-1)
+  complex(8),intent(out) :: zhpsi_out(0:nx-1,0:ny-1)
+  real(8),intent(in) :: ktmp(2)
+  integer :: ix,iy
+  real(8) :: c0x,c1x,c2x,c0y,c1y,c2y
+  real(8) :: g0x,g1x,g2x,g0y,g1y,g2y
+  real(8) :: c0
+
+  c0x = -0.5d0*clap0/dx**2
+  c1x = -0.5d0*clap1/dx**2
+  c2x = -0.5d0*clap2/dx**2
+
+  c0y = -0.5d0*clap0/dy**2
+  c1y = -0.5d0*clap1/dy**2
+  c2y = -0.5d0*clap2/dy**2
+
+  g1x = ktmp(1)*cgra1/dx
+  g2x = ktmp(1)*cgra2/dx
+
+  g1y = ktmp(2)*cgra1/dy
+  g2y = ktmp(2)*cgra2/dy
+
+
+  c0 = c0x+c0y-0.5d0*sum(ktmp(:)**2)
+
+  do iy = 0,ny-1
+    do ix = 0,nx-1
+
+      zhpsi_out(ix,iy) = c0*psi_in(ix,iy) &
+        +c1x*(psi_in(ixp1(ix),iy)+psi_in(ixm1(ix),iy)) &
+        +c2x*(psi_in(ixp2(ix),iy)+psi_in(ixm2(ix),iy)) &
+        +c1y*(psi_in(ix,iyp1(iy))+psi_in(ix,iym1(iy))) &
+        +c2y*(psi_in(ix,iyp2(iy))+psi_in(ix,iym2(iy))) &
+        -zI*(&
+         g1x*(psi_in(ixp1(ix),iy)-psi_in(ixm1(ix),iy)) &
+        +g2x*(psi_in(ixp2(ix),iy)-psi_in(ixm2(ix),iy)) &
+        +g1y*(psi_in(ix,iyp1(iy))-psi_in(ix,iym1(iy))) &
+        +g2y*(psi_in(ix,iyp2(iy))-psi_in(ix,iym2(iy))))
+
+    end do
+  end do
+
+! adding external and hartree potentials
+  zhpsi_out = zhpsi_out + (v_ext+v_H)*zpsi_in
+
+! forck operator should be applied here
+!!!!!!
+
+end subroutine zhpsi
 !----------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------!
 
