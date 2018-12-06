@@ -246,7 +246,7 @@ subroutine cg_eigen(ncg_in)
       bb = 2d0*sum(phi_t*hpsi_t)*dx
       call hpsi(phi_t,hpsi_t)
       aa = sum(phi_t*hpsi_t)*dx - lambda
-      aa = - aa ! fix
+      aa = - aa ! fix: there is a typo in the reference paper.
       if(aa /= 0d0)then
         theta = 0.5d0*atan(bb/aa)
       else

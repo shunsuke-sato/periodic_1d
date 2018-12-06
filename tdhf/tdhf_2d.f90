@@ -235,6 +235,103 @@ subroutine calc_ground_state
   
 end subroutine calc_ground_state
 !----------------------------------------------------------------------------------!
+subroutine cg_eigen(ncg_in)
+  use global_variables
+  implicit none
+  integer,intent(in) :: ncg_in
+
+  complex(8) :: psi_t(0:nx-1,0:ny-1)
+  complex(8) :: hpsi_t(0:nx-1,0:ny-1)
+  complex(8) :: xi(0:nx-1,0:ny-1)
+  complex(8) :: phi_t(0:nx-1,0:ny-1),phi_old(0:nx-1,0:ny-1)
+  real(8) :: lambda, xixi, xixi_old, gamma
+  integer :: istate, jstate, icg, i
+  real(8) :: ss, aa, bb, theta 
+  complex(8) :: zs
+  real(8) :: eps(nstate),res(nstate)
+  real(8) :: kxy(2)
+
+  do ik = 1, nk
+    kxy(1) = kx0(ik); kxy(2) = ky0(ik)
+
+    do istate = 1, nstate
+
+      psi_t(:,:) = zpsi(:,:,istate,ik)
+      do jstate = 1, istate -1
+        zs = sum(conjg(zpsi(:,:,jstate,ik))*psi_t(:,:))*dx*dy
+        psi_t(:,:) = psi_t(:,:) - zs*zpsi(:,:,jstate,ik)
+      end do
+      ss = sum(abs(psi_t)**2)*dx*dy
+      psi_t = psi_t/sqrt(ss)
+
+! calc xi
+      call zhpsi(psi_t, hpsi_t, kxy)
+      lambda = sum(conjg(psi_t)*hpsi_t)*dx*dy
+      xi = lambda*psi_t - hpsi_t
+      do jstate = 1, istate -1
+        zs = sum(conjg(zpsi(:,:,jstate,ik))*xi(:,:))*dx*dy
+        xi(:,:) = xi(:,:) - zs*zpsi(:,:,jstate,ik)
+      end do
+      
+      xixi = sum(abs(xi)**2)*dx*dy
+      xixi_old = xixi
+
+      do icg = 0, ncg_in
+        
+        if(icg == 0)then
+          gamma = 0d0
+          phi_old = 0d0
+        else
+          gamma = xixi/xixi_old
+          xixi_old = xixi
+        end if
+
+        phi_t = xi + gamma*phi_old
+        phi_old = phi_t
+        zs = sum(conjg(psi_t)*phi_t)*dx*dy
+        phi_t = phi_t - zs*psi_t
+        ss = sum(abs(phi_t)**2)*dx*dy
+        phi_t = phi_t/sqrt(ss)
+
+        bb = 2d0*sum(conjg(phi_t)*hpsi_t)*dx*dy
+        call zhpsi(phi_t,hpsi_t)        
+        aa = sum(conjg(phi_t)*hpsi_t)*dx*dy-lambda
+        aa = -aa ! fix: there is a typo in the reference paper.
+
+        if(aa /= 0d0)then
+          theta = 0.5d0*atan(bb/aa)
+        else
+          theta = 0.25d0*pi
+        end if
+        psi_t = cos(theta)*psi_t + sin(theta)*phi_t
+
+        do jstate = 1, istate -1
+          zs = sum(conjg(zpsi(:,:,jstate,ik))*psi_t(:,:))*dx*dy
+          psi_t(:,:) = psi_t(:,:) - zs*zpsi(:,:,jstate,ik)
+        end do
+        ss = sum(abs(psi_t)**2)*dx*dy
+        psi_t(:) = psi_t(:)/sqrt(ss)
+
+        if(icg == ncg_in)exit
+
+! calc xi
+        call zhpsi(psi_t,hpsi_t)
+        lambda = sum(conjg(psi_t)*hpsi_t)*dx*dy
+        xi = lambda*psi_t - hpsi_t        
+        do jstate = 1, istate -1
+          zs = sum(conjg(zpsi(:,:,jstate,ik))*xi(:,:))*dx*dy
+          xi(:,:) = xi(:,:) - zs*zpsi(:,:,jstate,ik)
+        end do
+
+        xixi = sum(abs(xi)**2)*dx*dy
+      end do
+      zpsi(:,:,istate,ik) = psi_t
+
+    end do
+  end do
+
+end subroutine cg_eigen
+!----------------------------------------------------------------------------------!
 subroutine zhpsi(zpsi_in,zhpsi_out,ktmp)
   use global_variables
   implicit none
