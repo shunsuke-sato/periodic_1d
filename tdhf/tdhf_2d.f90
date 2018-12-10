@@ -44,7 +44,7 @@ module global_variables
   real(8) :: dt, total_time
   real(8),allocatable :: jt(:,:),Act(:,:)
 
-  real(8) :: E0, omega0, Tpulse0
+  real(8) :: E0, omega0, Tpulse0, dir_pol(2)
 
 end module global_variables
 !----------------------------------------------------------------------------------!
@@ -56,6 +56,8 @@ program main
   call initialize
 
   call calc_ground_state
+
+  call calc_time_propagation
   
 end program main
 !----------------------------------------------------------------------------------!
@@ -84,6 +86,7 @@ subroutine input
   E0 = -1d-5
   omega0 = 1.17685180813d0 !0.358d0 !1d-2
   Tpulse0 = 40d0*2d0*pi/omega0
+  dir_pol(1:2) = (/ 1d0, 0d0 /)
 
   dt = 0.01d0
   total_time = tpulse0*2d0
@@ -467,5 +470,197 @@ subroutine update_hamiltonian
   
 
 end subroutine update_hamiltonian
+!----------------------------------------------------------------------------------!
+subroutine calc_time_propagation
+  use global_variables
+  implicit none
+  integer :: it, it_t
+  real(8) :: jt_t(2)
+
+  call update_hamiltonian
+  call init_laser_field
+  call calc_current(jt_t, 0)
+  jt(:,0) = jt_t(:)
+
+  do it = 0, nt
+    write(*,*)'it=',it,nt
+    call dt_evolve(it)
+    call calc_current(jt_t, it+1)
+    jt(:,it+1) = jt_t(:)
+
+    if(mod(it,max(1,nt/100))) == 0 .or. it == nt)then
+      open(30,file='Act_jt.out')
+      do it_t = 0, nt+1
+        write(30,"(999e26.16e3)")dt*it_t,Act(:,it_t),jt(:,it_t)
+      end do
+      close(30)
+    end if
+
+  end do
+
+end subroutine calc_time_propagation
+!----------------------------------------------------------------------------------!
+subroutine init_laser_field
+  use global_variables
+  implicit none
+  integer :: it
+  real(8) :: a0, tt, x
+  
+  allocate(Act(2,-1:nt+1), jt(2,-1:nt+1))
+  Act = 0d0
+  jt = 0d0
+
+  a0 = -E0/omega0
+
+! impulse
+!  Act(0:nt+1) = a0
+!  return
+
+! laser
+  do it = 0, nt
+    tt = dt*it
+    x = tt-0.5d0*tpulse0
+    if(abs(x)<0.5d0*tpulse0)then
+      Act(:,it) = dir_pol(:)*a0*cos(pi*x/tpulse0)**2*sin(omega0*x)
+    end if
+  end do
+
+end subroutine init_laser_field
+!----------------------------------------------------------------------------------!
+subroutine dt_evolve(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  complex(8)  :: zpsi_t(0:nx-1,0:ny-1,nstate_occ,nk)
+  real(8) :: Act_t(:)
+
+  zpsi_t(:,:,1:nstate_occ,:) = zpsi(:,:,1:nstate_occ,:)
+
+! predictor step
+  Act_t(:) = Act(:,it)
+
+  kx(:) = kx0(:) + Act_t(1)
+  ky(:) = ky0(:) + Act_t(2)
+
+  call propagator(dt*0.5d0)
+  call update_hamiltonian
+
+! corrector step
+  Act_t(:) = 0.5d0*(Act(:,it) + Act(:,it+1))
+  zpsi(:,:,1:nstate_occ,:) = zpsi_t(:,:,1:nstate_occ,:)
+
+  kx(:) = kx0(:) + Act_t(1)
+  ky(:) = ky0(:) + Act_t(2)
+
+  call propagator(dt)
+  call update_hamiltonian
+
+
+end subroutine dt_evolve
+!----------------------------------------------------------------------------------!
+subroutine propagator(dt_t)
+  use global_variables
+  implicit none
+  real(8),intent(in) :: dt_t
+  integer,parameter :: nexp_Taylor = 4
+  integer :: iexp
+  complex(8) :: zpsi_t(0:nx-1,0:ny-1)
+  complex(8) :: zhpsi_t(0:nx-1,0:ny-1)
+  complex(8) :: zfact
+  real(8) :: kxy(2)
+  integer :: ik,istate
+
+
+  do ik = 1, nk
+    do istate = 1, nstate_occ
+
+      kxy(1) = kx(ik); kxy(2) = ky(ik)
+
+      zpsi_t(0:nx-1,0:ny-1) = zpsi(0:nx-1,0:ny-1,istate,ik)
+      zfact = 1d0
+      do iexp = 1, nexp_Taylor
+        zfact = zfact*(-zi*dt_t)/iexp
+        call zhpsi(zpsi_t,zhpsi_t,kxy)
+        zpsi(0:nx-1,0:ny-1,istate,ik) = zpsi(0:nx-1,0:ny-1,istate,ik) &
+          + zfact*zhpsi_t(0:nx-1,0:ny-1)
+
+        if(iexp == nexp_Taylor)exit
+        zpsi_t = zhpsi_t
+      end do
+
+
+    end do
+  end do
+
+end subroutine propagator
+!----------------------------------------------------------------------------------!
+subroutine calc_current(jt_t, it_t)
+  use global_variables
+  implicit none
+  integer,intent(in)  :: it_t
+  real(8),intent(out) :: jt_t(2)
+  real(8) :: jt_k_t(2)
+  integer :: ik, istate
+
+  kx(:) = kx0(:) + Act_t(1,it_t) 
+  ky(:) = ky0(:) + Act_t(2,it_t) 
+
+  jt_t = 0d0
+  do ik = 1, nk
+    kxy(1) = kx(ik); kxy(2) = ky(ik)
+    do istate = 1, nstate_occ
+      
+      call calc_current_k(zpsi(:,:,istate,ik),kxy, jt_k_t)
+      jt_t = jt_t + occ(istate,ik)*jt_k_t
+
+    end do
+  end do
+
+  
+end subroutine calc_current
+!----------------------------------------------------------------------------------!
+subroutine calc_current_k(zpsi_t,kxy,jt_t)
+  use global_variables
+  implicit none
+  complex(8),intent(in) :: zpsi_t(0:nx-1,0:ny-1)
+  real(8),intent(in) :: kxy(2)
+  real(8),intent(out) :: jt_t(2)
+  real(8) :: g1x,g2x,g1y,g2y
+  integer :: ix, iy
+  complex(8) :: zs1, zs2
+
+
+  g1x = cgra1/dx
+  g2x = cgra2/dx
+
+  g1y = cgra1/dy
+  g2y = cgra2/dy
+  
+  jt_t = 0d0
+
+  do iy = 0,ny-1
+    do ix = 0,nx-1
+
+      zs1 = -zi*(g1x*(zpsi_t(ixp1(ix),iy)-zpsi_t(ixm1(ix),iy)) &
+                +g2x*(zpsi_t(ixp2(ix),iy)-zpsi_t(ixm2(ix),iy)))&
+                +kxy(1)*zpsi_t(ix,iy)
+
+      zs2 = -zi*(g1y*(zpsi_t(ix,iyp1(iy))-zpsi_t(ix,iym1(iy))) &
+                +g2y*(zpsi_t(ix,iyp1(iy))-zpsi_t(ix,iym2(iy))))&
+                +kxy(2)*zpsi_t(ix,iy)
+
+      jt_t(1) = jt_t(1) + real(conjg(zpsi_t(ix,iy))*z1)
+      jt_t(2) = jt_t(2) + real(conjg(zpsi_t(ix,iy))*z2)
+
+    end do
+  end do
+
+  jt_t = jt_t *dx*dy
+
+end subroutine calc_current_k
+!----------------------------------------------------------------------------------!
+!----------------------------------------------------------------------------------!
+!----------------------------------------------------------------------------------!
+!----------------------------------------------------------------------------------!
 !----------------------------------------------------------------------------------!
 
