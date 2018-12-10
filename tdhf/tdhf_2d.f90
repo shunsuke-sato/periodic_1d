@@ -242,7 +242,7 @@ subroutine calc_ground_state
   call update_hamiltonian
 
   do iscf = 1, 600
-    call cg_eigen(20)
+    call cg_eigen(5)
     call update_hamiltonian
 
   end do
@@ -488,7 +488,7 @@ subroutine calc_time_propagation
     call calc_current(jt_t, it+1)
     jt(:,it+1) = jt_t(:)
 
-    if(mod(it,max(1,nt/100))) == 0 .or. it == nt)then
+    if(mod(it,max(1,nt/100)) == 0 .or. it == nt)then
       open(30,file='Act_jt.out')
       do it_t = 0, nt+1
         write(30,"(999e26.16e3)")dt*it_t,Act(:,it_t),jt(:,it_t)
@@ -532,7 +532,7 @@ subroutine dt_evolve(it)
   implicit none
   integer,intent(in) :: it
   complex(8)  :: zpsi_t(0:nx-1,0:ny-1,nstate_occ,nk)
-  real(8) :: Act_t(:)
+  real(8) :: Act_t(2)
 
   zpsi_t(:,:,1:nstate_occ,:) = zpsi(:,:,1:nstate_occ,:)
 
@@ -600,10 +600,11 @@ subroutine calc_current(jt_t, it_t)
   integer,intent(in)  :: it_t
   real(8),intent(out) :: jt_t(2)
   real(8) :: jt_k_t(2)
+  real(8) :: kxy(2)
   integer :: ik, istate
 
-  kx(:) = kx0(:) + Act_t(1,it_t) 
-  ky(:) = ky0(:) + Act_t(2,it_t) 
+  kx(:) = kx0(:) + Act(1,it_t) 
+  ky(:) = ky0(:) + Act(2,it_t) 
 
   jt_t = 0d0
   do ik = 1, nk
@@ -649,8 +650,8 @@ subroutine calc_current_k(zpsi_t,kxy,jt_t)
                 +g2y*(zpsi_t(ix,iyp1(iy))-zpsi_t(ix,iym2(iy))))&
                 +kxy(2)*zpsi_t(ix,iy)
 
-      jt_t(1) = jt_t(1) + real(conjg(zpsi_t(ix,iy))*z1)
-      jt_t(2) = jt_t(2) + real(conjg(zpsi_t(ix,iy))*z2)
+      jt_t(1) = jt_t(1) + real(conjg(zpsi_t(ix,iy))*zs1)
+      jt_t(2) = jt_t(2) + real(conjg(zpsi_t(ix,iy))*zs2)
 
     end do
   end do
