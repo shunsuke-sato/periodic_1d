@@ -68,7 +68,7 @@ subroutine input
 
   nstate = 5
   nstate_occ = 1
-  nkx = 1
+  nkx = 3
   nky = 3
   nk = nkx*nky
   lattice_ax = 5d0
@@ -83,8 +83,8 @@ subroutine input
   dy = length_y/ny
 
 
-  E0 = -1d-5
-  omega0 = 1.17685180813d0 !0.358d0 !1d-2
+  E0 = 1d-5
+  omega0 = 0.25897316246d0 !0.358d0 !1d-2
   Tpulse0 = 40d0*2d0*pi/omega0
   dir_pol(1:2) = (/ 1d0, 0d0 /)
 
@@ -185,8 +185,8 @@ subroutine initialize
      do ix = 0,nx-1
         v_ext(ix,iy) = -0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
                               *cos(pi*yy(iy)/lattice_ay)**2&
-                              +sin(pi*xx(ix)/lattice_ax)**2&
-                              *cos(pi*(yy(iy)-0.25d0)/lattice_ay)**2)
+                              +sin(pi*yy(iy)/lattice_ay)**2&
+                              *cos(pi*(xx(ix)-0.25d0)/lattice_ax)**2)
      end do
   end do
 
@@ -194,7 +194,7 @@ subroutine initialize
   do iy = 0,ny-1
     do ix = 0,nx-1
 !      v_int(ix,iy) = 0d0
-        v_int(ix,iy) = 0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
+        v_int(ix,iy) = 0.25d0*(cos(pi*xx(ix)/lattice_ax)**2&
                               *cos(pi*yy(iy)/lattice_ay)**2)
 
     end do
@@ -376,7 +376,8 @@ subroutine cg_eigen(ncg_in)
 
 
     do istate = 1,nstate
-      write(*,"(A,2x,I4,2x,I4,2x,999e26.16e3)")"ik, # orb.",ik,istate,eps(istate),res(istate)
+      write(*,"(A,2x,I4,2x,I4,2x,999e26.16e3)")"ik, # orb.",ik,istate,kxy(1),kxy(2)&
+        ,eps(istate),res(istate)
     end do
     write(*,*)
   end do
