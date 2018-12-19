@@ -56,7 +56,6 @@ program main
   call initialize
 
   call calc_ground_state
-
   call calc_time_propagation
   
 end program main
@@ -72,7 +71,7 @@ subroutine input
   nky = 3
   nk = nkx*nky
   lattice_ax = 5d0
-  lattice_ay = 5d0
+  lattice_ay = 6d0
 
   nx = 32
   ny = 32
@@ -84,9 +83,9 @@ subroutine input
 
 
   E0 = 1d-5
-  omega0 = 0.25897316246d0 !0.358d0 !1d-2
-  Tpulse0 = 40d0*2d0*pi/omega0
-  dir_pol(1:2) = (/ 1d0, 0d0 /)
+  omega0 = 0.2896353183d0 !0.358d0 !1d-2
+  Tpulse0 = 20d0*2d0*pi/omega0
+  dir_pol(1:2) = (/ 0d0, 1d0 /)
 
   dt = 0.01d0
   total_time = tpulse0*2d0
@@ -100,6 +99,7 @@ subroutine initialize
   implicit none
   integer :: ix,iy,ixt,iyt
   integer :: ikx, iky, ik
+  real(8) :: x,y
 
   allocate(xx(0:nx-1),yy(0:ny-1))
   do ix = 0, nx-1
@@ -182,11 +182,16 @@ subroutine initialize
 
   ! set potential
   do iy = 0,ny-1
+    y = yy(iy)/lattice_ay
      do ix = 0,nx-1
-        v_ext(ix,iy) = -0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
-                              *cos(pi*yy(iy)/lattice_ay)**2&
-                              +sin(pi*yy(iy)/lattice_ay)**2&
-                              *cos(pi*(xx(ix)-0.25d0)/lattice_ax)**2)
+       x = xx(ix)/lattice_ax
+!        v_ext(ix,iy) = -0.5d0*(cos(pi*xx(ix)/lattice_ax)**2&
+!                              *cos(pi*yy(iy)/lattice_ay)**2&
+!                              +sin(pi*yy(iy)/lattice_ay)**2&
+!                              *cos(pi*(xx(ix)-0.25d0)/lattice_ax)**2)
+
+       v_ext(ix,iy) = 0.5d0*(cos(pi*x)**4*cos(pi*y)**4+0.7d0*cos(pi*(x-0.25d0))**4*cos(pi*(y-0.2d0))**4&
+         +cos(pi*x)**4*cos(pi*(y-0.3d0))**4+0.5d0*cos(pi*(x+0.2d0))**4*cos(pi*(y-0.25d0-0.3d0))**4)
      end do
   end do
 
@@ -489,7 +494,7 @@ subroutine calc_time_propagation
     call calc_current(jt_t, it+1)
     jt(:,it+1) = jt_t(:)
 
-    if(mod(it,max(1,nt/100)) == 0 .or. it == nt)then
+    if(mod(it,max(1,nt/50)) == 0 .or. it == nt)then
       open(30,file='Act_jt.out')
       do it_t = 0, nt+1
         write(30,"(999e26.16e3)")dt*it_t,Act(:,it_t),jt(:,it_t)
